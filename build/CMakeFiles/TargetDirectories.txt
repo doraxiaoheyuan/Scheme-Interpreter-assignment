@@ -1,0 +1,3 @@
+/Users/dora/Desktop/SchemeInterpreter-main/build/CMakeFiles/code.dir
+/Users/dora/Desktop/SchemeInterpreter-main/build/CMakeFiles/edit_cache.dir
+/Users/dora/Desktop/SchemeInterpreter-main/build/CMakeFiles/rebuild_cache.dir

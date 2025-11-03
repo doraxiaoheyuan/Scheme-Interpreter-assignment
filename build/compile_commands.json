@@ -1,0 +1,50 @@
+[
+{
+  "directory": "/Users/dora/Desktop/SchemeInterpreter-main/build",
+  "command": "/usr/bin/c++   -std=gnu++11 -arch arm64 -g -o CMakeFiles/code.dir/src/main.cpp.o -c /Users/dora/Desktop/SchemeInterpreter-main/src/main.cpp",
+  "file": "/Users/dora/Desktop/SchemeInterpreter-main/src/main.cpp",
+  "output": "CMakeFiles/code.dir/src/main.cpp.o"
+},
+{
+  "directory": "/Users/dora/Desktop/SchemeInterpreter-main/build",
+  "command": "/usr/bin/c++   -std=gnu++11 -arch arm64 -g -o CMakeFiles/code.dir/src/syntax.cpp.o -c /Users/dora/Desktop/SchemeInterpreter-main/src/syntax.cpp",
+  "file": "/Users/dora/Desktop/SchemeInterpreter-main/src/syntax.cpp",
+  "output": "CMakeFiles/code.dir/src/syntax.cpp.o"
+},
+{
+  "directory": "/Users/dora/Desktop/SchemeInterpreter-main/build",
+  "command": "/usr/bin/c++   -std=gnu++11 -arch arm64 -g -o CMakeFiles/code.dir/src/RE.cpp.o -c /Users/dora/Desktop/SchemeInterpreter-main/src/RE.cpp",
+  "file": "/Users/dora/Desktop/SchemeInterpreter-main/src/RE.cpp",
+  "output": "CMakeFiles/code.dir/src/RE.cpp.o"
+},
+{
+  "directory": "/Users/dora/Desktop/SchemeInterpreter-main/build",
+  "command": "/usr/bin/c++   -std=gnu++11 -arch arm64 -g -o CMakeFiles/code.dir/src/parser.cpp.o -c /Users/dora/Desktop/SchemeInterpreter-main/src/parser.cpp",
+  "file": "/Users/dora/Desktop/SchemeInterpreter-main/src/parser.cpp",
+  "output": "CMakeFiles/code.dir/src/parser.cpp.o"
+},
+{
+  "directory": "/Users/dora/Desktop/SchemeInterpreter-main/build",
+  "command": "/usr/bin/c++   -std=gnu++11 -arch arm64 -g -o CMakeFiles/code.dir/src/expr.cpp.o -c /Users/dora/Desktop/SchemeInterpreter-main/src/expr.cpp",
+  "file": "/Users/dora/Desktop/SchemeInterpreter-main/src/expr.cpp",
+  "output": "CMakeFiles/code.dir/src/expr.cpp.o"
+},
+{
+  "directory": "/Users/dora/Desktop/SchemeInterpreter-main/build",
+  "command": "/usr/bin/c++   -std=gnu++11 -arch arm64 -g -o CMakeFiles/code.dir/src/value.cpp.o -c /Users/dora/Desktop/SchemeInterpreter-main/src/value.cpp",
+  "file": "/Users/dora/Desktop/SchemeInterpreter-main/src/value.cpp",
+  "output": "CMakeFiles/code.dir/src/value.cpp.o"
+},
+{
+  "directory": "/Users/dora/Desktop/SchemeInterpreter-main/build",
+  "command": "/usr/bin/c++   -std=gnu++11 -arch arm64 -g -o CMakeFiles/code.dir/src/evaluation.cpp.o -c /Users/dora/Desktop/SchemeInterpreter-main/src/evaluation.cpp",
+  "file": "/Users/dora/Desktop/SchemeInterpreter-main/src/evaluation.cpp",
+  "output": "CMakeFiles/code.dir/src/evaluation.cpp.o"
+},
+{
+  "directory": "/Users/dora/Desktop/SchemeInterpreter-main/build",
+  "command": "/usr/bin/c++   -std=gnu++11 -arch arm64 -g -o CMakeFiles/code.dir/src/Def.cpp.o -c /Users/dora/Desktop/SchemeInterpreter-main/src/Def.cpp",
+  "file": "/Users/dora/Desktop/SchemeInterpreter-main/src/Def.cpp",
+  "output": "CMakeFiles/code.dir/src/Def.cpp.o"
+}
+]
