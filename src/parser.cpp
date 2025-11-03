@@ -1,10 +1,11 @@
 /**
  * @file parser.cpp
- * @brief Parsing implementation for Scheme syntax tree to expression tree conversion
- * 
- * This file implements the parsing logic that converts syntax trees into
- * expression trees that can be evaluated. It handles special forms, primitives,
- * and function applications.
+ * @brief Turn Syntax (reader output) into Expr (evaluator input).
+ *
+ * Parsing decides which constructs are primitives/special forms vs. ordinary
+ * applications. Variable shadowing is honored: if a name is already bound in
+ * the given environment, we parse it as a normal variable reference/call,
+ * even if it looks like a primitive or a special form keyword.
  */
 
 #include "RE.hpp"
@@ -24,201 +25,215 @@ extern std::map<std::string, ExprType> reserved_words;
 
 static Expr parseSyntax(const Syntax &stx, Assoc &env);
 
+// The SyntaxBase subclasses (Number, SymbolSyntax, ...) implement parse via dynamic dispatch.
+// This is a helper override required by the template; we don't use it directly through Syntax.
 Expr Syntax::parse(Assoc &env) {
     throw RuntimeError("Unimplemented parse method");
 }
 
 Expr Number::parse(Assoc &env) {
+    (void)env;
     return Expr(new Fixnum(n));
 }
 
 Expr RationalSyntax::parse(Assoc &env) {
+    (void)env;
     return Expr(new RationalNum(numerator, denominator));
 }
 
 Expr SymbolSyntax::parse(Assoc &env) {
+    (void)env;
     return Expr(new Var(s));
 }
 
 Expr StringSyntax::parse(Assoc &env) {
+    (void)env;
     return Expr(new StringExpr(s));
 }
 
 Expr TrueSyntax::parse(Assoc &env) {
+    (void)env;
     return Expr(new True());
 }
 
 Expr FalseSyntax::parse(Assoc &env) {
+    (void)env;
     return Expr(new False());
 }
 
 static Expr parseSyntax(const Syntax &stx, Assoc &env) {
-    if (auto n = dynamic_cast<Number*>(stx.get()))        return Expr(new Fixnum(n->n));
-    if (auto r = dynamic_cast<RationalSyntax*>(stx.get()))return Expr(new RationalNum(r->numerator, r->denominator));
-    if (auto t = dynamic_cast<TrueSyntax*>(stx.get()))     return Expr(new True());
-    if (auto f = dynamic_cast<FalseSyntax*>(stx.get()))    return Expr(new False());
-    if (auto s = dynamic_cast<StringSyntax*>(stx.get()))   return Expr(new StringExpr(s->s));
-    if (auto v = dynamic_cast<SymbolSyntax*>(stx.get()))   return Expr(new Var(v->s));
-    if (auto l = dynamic_cast<List*>(stx.get()))           return l->parse(env);
+    if (auto n = dynamic_cast<Number*>(stx.get()))         return Expr(new Fixnum(n->n));
+    if (auto r = dynamic_cast<RationalSyntax*>(stx.get())) return Expr(new RationalNum(r->numerator, r->denominator));
+    if (auto t = dynamic_cast<TrueSyntax*>(stx.get()))      return Expr(new True());
+    if (auto f = dynamic_cast<FalseSyntax*>(stx.get()))     return Expr(new False());
+    if (auto s = dynamic_cast<StringSyntax*>(stx.get()))    return Expr(new StringExpr(s->s));
+    if (auto v = dynamic_cast<SymbolSyntax*>(stx.get()))    return Expr(new Var(v->s));
+    if (auto l = dynamic_cast<List*>(stx.get()))            return l->parse(env);
     throw RuntimeError("Unknown syntax node");
 }
 
-static vector<Expr> parseListItemsFrom(const vector<Syntax> &items, size_t start, Assoc &env) {
+static vector<Expr> parseFromIndex(const vector<Syntax> &items, size_t start, Assoc &env) {
     vector<Expr> out;
+    out.reserve(items.size() - start);
     for (size_t i = start; i < items.size(); ++i) out.push_back(parseSyntax(items[i], env));
     return out;
 }
 
+// Extend an environment with a batch of placeholder bindings (for shadow checks during parse)
+static Assoc extendWithPlaceholders(const vector<string> &names, Assoc env) {
+    Assoc tmp = env;
+    for (const auto &nm : names) {
+        tmp = extend(nm, VoidV(), tmp);
+    }
+    return tmp;
+}
+
 Expr List::parse(Assoc &env) {
     if (stxs.empty()) {
-        // '() parsed as (quote ())
+        // () is read as (quote ())
         return Expr(new Quote(Syntax(new List())));
     }
 
-    // If head is not a symbol, treat as (Apply <head-expr> <arg> ...)
+    // If the head isn't a symbol, this is a computed operator: ( (f x) a b ... )
     auto symHead = dynamic_cast<SymbolSyntax*>(stxs[0].get());
     if (!symHead) {
-        vector<Expr> args = parseListItemsFrom(stxs, 1, env);
+        vector<Expr> args = parseFromIndex(stxs, 1, env);
         return Expr(new Apply(parseSyntax(stxs[0], env), args));
     }
 
-    // Head is symbol; could be a user var (call), a primitive, or a reserved word
     const string op = symHead->s;
 
-    // If op is bound in env (can shadow primitive/reserved), treat as function var apply
+    // Shadowing: if 'op' is already bound in env, parse as a normal application
     if (find(op, env).get() != nullptr) {
-        vector<Expr> args = parseListItemsFrom(stxs, 1, env);
+        vector<Expr> args = parseFromIndex(stxs, 1, env);
         return Expr(new Apply(Expr(new Var(op)), args));
     }
 
-    // Primitive functions
+    // Primitive families
     if (primitives.count(op)) {
-        vector<Expr> params = parseListItemsFrom(stxs, 1, env);
+        vector<Expr> ps = parseFromIndex(stxs, 1, env);
         ExprType t = primitives[op];
 
         switch (t) {
-            // arithmetic
+            // arithmetic (fixed-arity wrappers + variadic forms)
             case E_PLUS:
-                if (params.size() == 2) return Expr(new Plus(params[0], params[1]));
-                return Expr(new PlusVar(params));
+                if (ps.size() == 2) return Expr(new Plus(ps[0], ps[1]));
+                return Expr(new PlusVar(ps));
             case E_MINUS:
-                if (params.size() == 2) return Expr(new Minus(params[0], params[1]));
-                if (params.empty()) throw RuntimeError("Wrong number of arguments for -");
-                return Expr(new MinusVar(params));
+                if (ps.size() == 2) return Expr(new Minus(ps[0], ps[1]));
+                if (ps.empty()) throw RuntimeError("Wrong number of arguments for -");
+                return Expr(new MinusVar(ps));
             case E_MUL:
-                if (params.size() == 2) return Expr(new Mult(params[0], params[1]));
-                return Expr(new MultVar(params));
+                if (ps.size() == 2) return Expr(new Mult(ps[0], ps[1]));
+                return Expr(new MultVar(ps));
             case E_DIV:
-                if (params.size() == 2) return Expr(new Div(params[0], params[1]));
-                if (params.empty()) throw RuntimeError("Wrong number of arguments for /");
-                return Expr(new DivVar(params));
+                if (ps.size() == 2) return Expr(new Div(ps[0], ps[1]));
+                if (ps.empty()) throw RuntimeError("Wrong number of arguments for /");
+                return Expr(new DivVar(ps));
             case E_MODULO:
-                if (params.size() != 2) throw RuntimeError("Wrong number of arguments for modulo");
-                return Expr(new Modulo(params[0], params[1]));
+                if (ps.size() != 2) throw RuntimeError("Wrong number of arguments for modulo");
+                return Expr(new Modulo(ps[0], ps[1]));
             case E_EXPT:
-                if (params.size() != 2) throw RuntimeError("Wrong number of arguments for expt");
-                return Expr(new Expt(params[0], params[1]));
+                if (ps.size() != 2) throw RuntimeError("Wrong number of arguments for expt");
+                return Expr(new Expt(ps[0], ps[1]));
 
-            // comparisons (support variadic)
+            // comparisons (support variadic too)
             case E_LT:
-                if (params.size() < 2) throw RuntimeError("Wrong number of arguments for <");
-                if (params.size() == 2) return Expr(new Less(params[0], params[1]));
-                return Expr(new LessVar(params));
+                if (ps.size() < 2) throw RuntimeError("Wrong number of arguments for <");
+                if (ps.size() == 2) return Expr(new Less(ps[0], ps[1]));
+                return Expr(new LessVar(ps));
             case E_LE:
-                if (params.size() < 2) throw RuntimeError("Wrong number of arguments for <=");
-                if (params.size() == 2) return Expr(new LessEq(params[0], params[1]));
-                return Expr(new LessEqVar(params));
+                if (ps.size() < 2) throw RuntimeError("Wrong number of arguments for <=");
+                if (ps.size() == 2) return Expr(new LessEq(ps[0], ps[1]));
+                return Expr(new LessEqVar(ps));
             case E_EQ:
-                if (params.size() < 2) throw RuntimeError("Wrong number of arguments for =");
-                if (params.size() == 2) return Expr(new Equal(params[0], params[1]));
-                return Expr(new EqualVar(params));
+                if (ps.size() < 2) throw RuntimeError("Wrong number of arguments for =");
+                if (ps.size() == 2) return Expr(new Equal(ps[0], ps[1]));
+                return Expr(new EqualVar(ps));
             case E_GE:
-                if (params.size() < 2) throw RuntimeError("Wrong number of arguments for >=");
-                if (params.size() == 2) return Expr(new GreaterEq(params[0], params[1]));
-                return Expr(new GreaterEqVar(params));
+                if (ps.size() < 2) throw RuntimeError("Wrong number of arguments for >=");
+                if (ps.size() == 2) return Expr(new GreaterEq(ps[0], ps[1]));
+                return Expr(new GreaterEqVar(ps));
             case E_GT:
-                if (params.size() < 2) throw RuntimeError("Wrong number of arguments for >");
-                if (params.size() == 2) return Expr(new Greater(params[0], params[1]));
-                return Expr(new GreaterVar(params));
+                if (ps.size() < 2) throw RuntimeError("Wrong number of arguments for >");
+                if (ps.size() == 2) return Expr(new Greater(ps[0], ps[1]));
+                return Expr(new GreaterVar(ps));
 
             // lists
             case E_LIST:
-                return Expr(new ListFunc(params));
+                return Expr(new ListFunc(ps));
             case E_CONS:
-                if (params.size() != 2) throw RuntimeError("Wrong number of arguments for cons");
-                return Expr(new Cons(params[0], params[1]));
+                if (ps.size() != 2) throw RuntimeError("Wrong number of arguments for cons");
+                return Expr(new Cons(ps[0], ps[1]));
             case E_CAR:
-                if (params.size() != 1) throw RuntimeError("Wrong number of arguments for car");
-                return Expr(new Car(params[0]));
+                if (ps.size() != 1) throw RuntimeError("Wrong number of arguments for car");
+                return Expr(new Car(ps[0]));
             case E_CDR:
-                if (params.size() != 1) throw RuntimeError("Wrong number of arguments for cdr");
-                return Expr(new Cdr(params[0]));
+                if (ps.size() != 1) throw RuntimeError("Wrong number of arguments for cdr");
+                return Expr(new Cdr(ps[0]));
             case E_SETCAR:
-                if (params.size() != 2) throw RuntimeError("Wrong number of arguments for set-car!");
-                return Expr(new SetCar(params[0], params[1]));
+                if (ps.size() != 2) throw RuntimeError("Wrong number of arguments for set-car!");
+                return Expr(new SetCar(ps[0], ps[1]));
             case E_SETCDR:
-                if (params.size() != 2) throw RuntimeError("Wrong number of arguments for set-cdr!");
-                return Expr(new SetCdr(params[0], params[1]));
+                if (ps.size() != 2) throw RuntimeError("Wrong number of arguments for set-cdr!");
+                return Expr(new SetCdr(ps[0], ps[1]));
 
-            // logic and predicates, i/o, control
+            // logic / predicates / i/o / control as procedures
             case E_AND:
-                return Expr(new AndVar(params));
+                return Expr(new AndVar(ps));
             case E_OR:
-                return Expr(new OrVar(params));
+                return Expr(new OrVar(ps));
             case E_NOT:
-                if (params.size() != 1) throw RuntimeError("Wrong number of arguments for not");
-                return Expr(new Not(params[0]));
+                if (ps.size() != 1) throw RuntimeError("Wrong number of arguments for not");
+                return Expr(new Not(ps[0]));
 
             case E_EQQ:
-                if (params.size() != 2) throw RuntimeError("Wrong number of arguments for eq?");
-                return Expr(new IsEq(params[0], params[1]));
+                if (ps.size() != 2) throw RuntimeError("Wrong number of arguments for eq?");
+                return Expr(new IsEq(ps[0], ps[1]));
             case E_BOOLQ:
-                if (params.size() != 1) throw RuntimeError("Wrong number of arguments for boolean?");
-                return Expr(new IsBoolean(params[0]));
+                if (ps.size() != 1) throw RuntimeError("Wrong number of arguments for boolean?");
+                return Expr(new IsBoolean(ps[0]));
             case E_INTQ:
-                if (params.size() != 1) throw RuntimeError("Wrong number of arguments for number?");
-                return Expr(new IsFixnum(params[0]));
+                if (ps.size() != 1) throw RuntimeError("Wrong number of arguments for number?");
+                return Expr(new IsFixnum(ps[0]));
             case E_NULLQ:
-                if (params.size() != 1) throw RuntimeError("Wrong number of arguments for null?");
-                return Expr(new IsNull(params[0]));
+                if (ps.size() != 1) throw RuntimeError("Wrong number of arguments for null?");
+                return Expr(new IsNull(ps[0]));
             case E_PAIRQ:
-                if (params.size() != 1) throw RuntimeError("Wrong number of arguments for pair?");
-                return Expr(new IsPair(params[0]));
+                if (ps.size() != 1) throw RuntimeError("Wrong number of arguments for pair?");
+                return Expr(new IsPair(ps[0]));
             case E_PROCQ:
-                if (params.size() != 1) throw RuntimeError("Wrong number of arguments for procedure?");
-                return Expr(new IsProcedure(params[0]));
+                if (ps.size() != 1) throw RuntimeError("Wrong number of arguments for procedure?");
+                return Expr(new IsProcedure(ps[0]));
             case E_SYMBOLQ:
-                if (params.size() != 1) throw RuntimeError("Wrong number of arguments for symbol?");
-                return Expr(new IsSymbol(params[0]));
+                if (ps.size() != 1) throw RuntimeError("Wrong number of arguments for symbol?");
+                return Expr(new IsSymbol(ps[0]));
             case E_LISTQ:
-                if (params.size() != 1) throw RuntimeError("Wrong number of arguments for list?");
-                return Expr(new IsList(params[0]));
+                if (ps.size() != 1) throw RuntimeError("Wrong number of arguments for list?");
+                return Expr(new IsList(ps[0]));
             case E_STRINGQ:
-                if (params.size() != 1) throw RuntimeError("Wrong number of arguments for string?");
-                return Expr(new IsString(params[0]));
+                if (ps.size() != 1) throw RuntimeError("Wrong number of arguments for string?");
+                return Expr(new IsString(ps[0]));
 
             case E_DISPLAY:
-                if (params.size() != 1) throw RuntimeError("Wrong number of arguments for display");
-                return Expr(new Display(params[0]));
+                if (ps.size() != 1) throw RuntimeError("Wrong number of arguments for display");
+                return Expr(new Display(ps[0]));
 
             case E_VOID:
-                if (!params.empty()) throw RuntimeError("Wrong number of arguments for void");
+                if (!ps.empty()) throw RuntimeError("Wrong number of arguments for void");
                 return Expr(new MakeVoid());
             case E_EXIT:
-                if (!params.empty()) throw RuntimeError("Wrong number of arguments for exit");
+                if (!ps.empty()) throw RuntimeError("Wrong number of arguments for exit");
                 return Expr(new Exit());
-
-            default:
-                throw RuntimeError("Unknown primitive: " + op);
         }
+        throw RuntimeError("Unknown primitive: " + op);
     }
 
-    // Reserved words (special forms)
+    // Special forms
     if (reserved_words.count(op)) {
         switch (reserved_words[op]) {
             case E_BEGIN: {
-                // (begin e1 e2 ...)
-                vector<Expr> seq = parseListItemsFrom(stxs, 1, env);
+                vector<Expr> seq = parseFromIndex(stxs, 1, env);
                 return Expr(new Begin(seq));
             }
             case E_QUOTE: {
@@ -239,6 +254,7 @@ Expr List::parse(Assoc &env) {
                     auto sub = dynamic_cast<List*>(stxs[i].get());
                     if (!sub) throw RuntimeError("Wrong clause in cond");
                     vector<Expr> one;
+                    one.reserve(sub->stxs.size());
                     for (auto &s : sub->stxs) one.push_back(parseSyntax(s, env));
                     clauses.push_back(one);
                 }
@@ -248,23 +264,31 @@ Expr List::parse(Assoc &env) {
                 if (stxs.size() < 3) throw RuntimeError("Wrong number of arguments for lambda");
                 auto paramsList = dynamic_cast<List*>(stxs[1].get());
                 if (!paramsList) throw RuntimeError("Invalid parameter list in lambda");
+
                 vector<string> params;
+                params.reserve(paramsList->stxs.size());
                 for (auto &p : paramsList->stxs) {
                     auto s = dynamic_cast<SymbolSyntax*>(p.get());
                     if (!s) throw RuntimeError("Invalid parameter");
                     params.push_back(s->s);
                 }
-                vector<Expr> bodies = parseListItemsFrom(stxs, 2, env);
+
+                // For parsing the body, pre-bind parameter names so that any
+                // special-form-looking identifiers are parsed as variables if shadowed.
+                Assoc bodyEnv = extendWithPlaceholders(params, env);
+                vector<Expr> bodies = parseFromIndex(stxs, 2, bodyEnv);
                 Expr body = bodies.size() == 1 ? bodies[0] : Expr(new Begin(bodies));
                 return Expr(new Lambda(params, body));
             }
             case E_DEFINE: {
                 if (stxs.size() < 3) throw RuntimeError("Wrong number of arguments for define");
-                // function sugar: (define (fname a b ...) body...)
+
+                // Function sugar: (define (fname a b ...) body...)
                 if (auto sig = dynamic_cast<List*>(stxs[1].get())) {
                     if (sig->stxs.empty()) throw RuntimeError("Invalid function signature in define");
                     auto nameSym = dynamic_cast<SymbolSyntax*>(sig->stxs[0].get());
                     if (!nameSym) throw RuntimeError("Invalid function name in define");
+
                     string fname = nameSym->s;
                     vector<string> params;
                     for (size_t i = 1; i < sig->stxs.size(); ++i) {
@@ -272,15 +296,22 @@ Expr List::parse(Assoc &env) {
                         if (!s) throw RuntimeError("Invalid parameter in define");
                         params.push_back(s->s);
                     }
-                    vector<Expr> bodies = parseListItemsFrom(stxs, 2, env);
+
+                    // Parse function body with params pre-bound (and the function name, for readability/shadow checks)
+                    Assoc bodyEnv = extendWithPlaceholders(params, env);
+                    bodyEnv = extend(fname, VoidV(), bodyEnv);
+
+                    vector<Expr> bodies = parseFromIndex(stxs, 2, bodyEnv);
                     Expr body = bodies.size() == 1 ? bodies[0] : Expr(new Begin(bodies));
                     Expr lam = Expr(new Lambda(params, body));
                     return Expr(new Define(fname, lam));
                 }
-                // variable define: (define name expr-or-seq)
+
+                // Variable define: (define name expr-or-seq)
                 auto nameSym = dynamic_cast<SymbolSyntax*>(stxs[1].get());
                 if (!nameSym) throw RuntimeError("Invalid variable name in define");
-                vector<Expr> rhsParts = parseListItemsFrom(stxs, 2, env);
+
+                vector<Expr> rhsParts = parseFromIndex(stxs, 2, env);
                 Expr rhs = rhsParts.size() == 1 ? rhsParts[0] : Expr(new Begin(rhsParts));
                 return Expr(new Define(nameSym->s, rhs));
             }
@@ -288,15 +319,25 @@ Expr List::parse(Assoc &env) {
                 if (stxs.size() < 3) throw RuntimeError("Wrong number of arguments for let");
                 auto binds = dynamic_cast<List*>(stxs[1].get());
                 if (!binds) throw RuntimeError("Invalid binding list in let");
+
                 vector<std::pair<string, Expr>> pairs;
+                vector<string> names;
+                pairs.reserve(binds->stxs.size());
+                names.reserve(binds->stxs.size());
+
+                // RHS parsed in the outer env (let semantics)
                 for (auto &b : binds->stxs) {
                     auto kv = dynamic_cast<List*>(b.get());
                     if (!kv || kv->stxs.size() != 2) throw RuntimeError("Wrong binding in let");
                     auto keySym = dynamic_cast<SymbolSyntax*>(kv->stxs[0].get());
                     if (!keySym) throw RuntimeError("Invalid let variable");
+                    names.push_back(keySym->s);
                     pairs.push_back({keySym->s, parseSyntax(kv->stxs[1], env)});
                 }
-                vector<Expr> bodies = parseListItemsFrom(stxs, 2, env);
+
+                // Parse body with placeholders for bound names so shadowing works while parsing
+                Assoc bodyEnv = extendWithPlaceholders(names, env);
+                vector<Expr> bodies = parseFromIndex(stxs, 2, bodyEnv);
                 Expr body = bodies.size() == 1 ? bodies[0] : Expr(new Begin(bodies));
                 return Expr(new Let(pairs, body));
             }
@@ -304,15 +345,32 @@ Expr List::parse(Assoc &env) {
                 if (stxs.size() < 3) throw RuntimeError("Wrong number of arguments for letrec");
                 auto binds = dynamic_cast<List*>(stxs[1].get());
                 if (!binds) throw RuntimeError("Invalid binding list in letrec");
+
                 vector<std::pair<string, Expr>> pairs;
+                vector<string> names;
+                pairs.reserve(binds->stxs.size());
+                names.reserve(binds->stxs.size());
+
+                // In letrec, RHS sees all bound names; build a placeholder env first
+                Assoc preEnv = env;
                 for (auto &b : binds->stxs) {
                     auto kv = dynamic_cast<List*>(b.get());
                     if (!kv || kv->stxs.size() != 2) throw RuntimeError("Wrong binding in letrec");
                     auto keySym = dynamic_cast<SymbolSyntax*>(kv->stxs[0].get());
                     if (!keySym) throw RuntimeError("Invalid letrec variable");
-                    pairs.push_back({keySym->s, parseSyntax(kv->stxs[1], env)});
+                    names.push_back(keySym->s);
+                    preEnv = extend(keySym->s, VoidV(), preEnv);
                 }
-                vector<Expr> bodies = parseListItemsFrom(stxs, 2, env);
+
+                // Now parse each RHS in the placeholder env
+                for (size_t i = 0; i < binds->stxs.size(); ++i) {
+                    auto kv = dynamic_cast<List*>(binds->stxs[i].get());
+                    auto keySym = dynamic_cast<SymbolSyntax*>(kv->stxs[0].get());
+                    pairs.push_back({keySym->s, parseSyntax(kv->stxs[1], preEnv)});
+                }
+
+                // Body parsed in the same placeholder env so shadowing is consistent
+                vector<Expr> bodies = parseFromIndex(stxs, 2, preEnv);
                 Expr body = bodies.size() == 1 ? bodies[0] : Expr(new Begin(bodies));
                 return Expr(new Letrec(pairs, body));
             }
@@ -323,12 +381,11 @@ Expr List::parse(Assoc &env) {
                 Expr rhs = parseSyntax(stxs[2], env);
                 return Expr(new Set(nameSym->s, rhs));
             }
-            default:
-                throw RuntimeError("Unknown reserved word: " + op);
         }
+        throw RuntimeError("Unknown reserved word: " + op);
     }
 
-    // Default: treat as application of a variable (even if it looks like a keyword name but unbound here)
-    vector<Expr> args = parseListItemsFrom(stxs, 1, env);
+    // Otherwise: treat as application of a variable (unbound here; may resolve at runtime)
+    vector<Expr> args = parseFromIndex(stxs, 1, env);
     return Expr(new Apply(Expr(new Var(op)), args));
 }
