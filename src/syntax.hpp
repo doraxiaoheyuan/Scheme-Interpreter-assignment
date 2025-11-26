@@ -37,11 +37,13 @@ struct RationalSyntax : SyntaxBase {
 };
 
 struct TrueSyntax : SyntaxBase {
+    // This will not match
     virtual Expr parse(Assoc &) override;
     virtual void show(std::ostream &) override;
 };
 
 struct FalseSyntax : SyntaxBase {
+    // FalseSyntax();
     virtual Expr parse(Assoc &) override;
     virtual void show(std::ostream &) override;
 };

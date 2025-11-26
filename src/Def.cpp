@@ -1,6 +1,7 @@
 /**
  * @file Def.cpp
  * @brief Implementation of primitive functions and reserved words mappings
+ * @author luke36
  * 
  * This file defines the mapping tables that associate Scheme function names
  * and special forms with their corresponding internal expression types.
@@ -10,6 +11,19 @@
 
 /**
  * @brief Mapping of primitive function names to expression types
+ * 
+ * This map contains all built-in functions that can be called in Scheme.
+ * These are functions that have direct implementations in the interpreter
+ * and can be used in function application contexts.
+ * 
+ * Categories:
+ * - Arithmetic: +, -, *, /, modulo, expt
+ * - Comparison: <, <=, =, >=, >
+ * - List operations: cons, car, cdr, list, set-car!, set-cdr!
+ * - Logic: not, and, or (and/or support short-circuit evaluation)
+ * - Type predicates: eq?, boolean?, number?, null?, pair?, procedure?, symbol?, list?, string?
+ * - I/O: display
+ * - Control: void, exit
  */
 std::map<std::string, ExprType> primitives = {
     // Arithmetic operations
@@ -61,20 +75,41 @@ std::map<std::string, ExprType> primitives = {
 
 /**
  * @brief Mapping of reserved words (special forms) to expression types
+ * 
+ * This map contains Scheme special forms that have special syntax and
+ * evaluation rules. These cannot be used as regular function names and
+ * have special parsing and evaluation semantics.
+ * 
+ * Categories:
+ * - Control flow constructs: begin, quote
+ * - Conditional : if, cond
+ * - Function definition: lambda
+ * - Variable and function definition: define
+ * - Binding constructs: let, letrec
+ * - Assignment: set!
+ * 
+ * Note: and/or have been moved to primitives to support function-style usage
+ * while maintaining their short-circuit evaluation behavior.
  */
 std::map<std::string, ExprType> reserved_words = {
+    // Control flow constructs
     {"begin",   E_BEGIN},    
     {"quote",   E_QUOTE},    
 
+    // Conditional
     {"if",      E_IF},       
     {"cond",    E_COND},     
 
+    // Function definition
     {"lambda",  E_LAMBDA},   
 
+    // Variable and function definition
     {"define",  E_DEFINE},   
 
+    // Binding constructs
     {"let",     E_LET},      
     {"letrec",  E_LETREC},   
     
+    // Assignment
     {"set!",    E_SET}      
 };

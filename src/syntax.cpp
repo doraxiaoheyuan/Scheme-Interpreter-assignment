@@ -47,12 +47,18 @@ void List::show(std::ostream &os) {
 
 std::istream &readSpace(std::istream &is) {
   while (true) {
+    // 跳过空白字符
     while (isspace(is.peek()))
       is.get();
+    
+    // 检查是否是注释
     if (is.peek() == ';') {
+      // 跳过注释直到行末
       while (is.peek() != '\n' && is.peek() != EOF)
         is.get();
+      // 继续循环以跳过注释后的空白字符
     } else {
+      // 没有更多空白字符或注释，退出循环
       break;
     }
   }
@@ -61,36 +67,66 @@ std::istream &readSpace(std::istream &is) {
 
 Syntax readList(std::istream &is);
 
-static bool tryParseNumber(const std::string &s, int &result) {
+// Helper function to try parsing as integer or rational
+bool tryParseNumber(const std::string &s, int &result) {
   bool neg = false;
   int n = 0;
   int i = 0;
+  
+  // Single '+' or '-' are not numbers
   if (s.size() == 1 && (s[0] == '+' || s[0] == '-'))
     return false;
-  if (s[0] == '-') { i += 1; neg = true; }
-  else if (s[0] == '+') { i += 1; }
-  for (; i < (int)s.size(); i++) {
-    if ('0' <= s[i] && s[i] <= '9') n = n * 10 + s[i] - '0';
-    else return false;
+  
+  // Handle sign
+  if (s[0] == '-') {
+    i += 1;
+    neg = true;
+  } else if (s[0] == '+') {
+    i += 1;
   }
+  
+  // Check if all remaining characters are digits
+  for (; i < s.size(); i++) {
+    if ('0' <= s[i] && s[i] <= '9') {
+      n = n * 10 + s[i] - '0';
+    } else {
+      return false;  // Not a valid number
+    }
+  }
+  
   result = neg ? -n : n;
   return true;
 }
 
-static bool tryParseRational(const std::string &s, int &numerator, int &denominator) {
+// Helper function to try parsing as rational number
+bool tryParseRational(const std::string &s, int &numerator, int &denominator) {
   size_t slash_pos = s.find('/');
-  if (slash_pos == std::string::npos || slash_pos == 0 || slash_pos == s.size() - 1)
-    return false;
+  if (slash_pos == std::string::npos || slash_pos == 0 || slash_pos == s.size() - 1) {
+    return false; // No slash or slash at beginning/end
+  }
+  
   std::string num_str = s.substr(0, slash_pos);
   std::string den_str = s.substr(slash_pos + 1);
-  if (!tryParseNumber(num_str, numerator)) return false;
-  if (!tryParseNumber(den_str, denominator) || denominator <= 0) return false;
+  
+  // Parse numerator (can be negative)
+  if (!tryParseNumber(num_str, numerator)) {
+    return false;
+  }
+  
+  // Parse denominator (must be positive)
+  if (!tryParseNumber(den_str, denominator) || denominator <= 0) {
+    return false;
+  }
+  
   return true;
 }
 
-static Syntax createIdentifierSyntax(const std::string &s) {
-  if (s == "#t") return Syntax(new TrueSyntax());
-  if (s == "#f") return Syntax(new FalseSyntax());
+// Helper function to create identifier/symbol syntax
+Syntax createIdentifierSyntax(const std::string &s) {
+  if (s == "#t")
+    return Syntax(new TrueSyntax());
+  if (s == "#f")
+    return Syntax(new FalseSyntax());
   return Syntax(new SymbolSyntax(s));
 }
 
@@ -100,20 +136,27 @@ Syntax readItem(std::istream &is) {
     is.get();
     return readList(is);
   }
-  if (is.peek() == '\'') {
+  if (is.peek() == '\'')
+  {
     is.get();
+    // 读取单引号后的语法元素
     Syntax quoted_syntax = readItem(is);
+    
+    // 创建 (quote <syntax>) 的列表结构
     List *quote_list = new List();
     quote_list->stxs.push_back(Syntax(new SymbolSyntax("quote")));
     quote_list->stxs.push_back(quoted_syntax);
+    
     return Syntax(quote_list);
   }
+  // 处理字符串字面量
   if (is.peek() == '"') {
-    is.get();
+    is.get(); // 消费开始的双引号
     std::string str;
     while (is.peek() != '"' && is.peek() != EOF) {
       char c = is.get();
       if (c == '\\') {
+        // 处理转义字符
         char next = is.get();
         switch (next) {
           case 'n': str.push_back('\n'); break;
@@ -127,30 +170,39 @@ Syntax readItem(std::istream &is) {
         str.push_back(c);
       }
     }
-    if (is.peek() == '"') is.get();
+    if (is.peek() == '"') {
+      is.get(); // 消费结束的双引号
+    }
     return Syntax(new StringSyntax(str));
   }
   
+  // Read token
   std::string s;
   do {
     int c = is.peek();
     if (c == '(' || c == ')' ||
         c == '[' || c == ']' || 
-        c == ';' ||
+        c == ';' ||  // 添加分号作为分隔符
         isspace(c) ||
-        c == EOF) break;
+        c == EOF)
+      break;
     is.get();
     s.push_back(c);
   } while (true);
   
+  // Try parsing as rational first
   int numerator, denominator;
   if (tryParseRational(s, numerator, denominator)) {
     return Syntax(new RationalSyntax(numerator, denominator));
   }
+  
+  // Try parsing as integer
   int number_value;
   if (tryParseNumber(s, number_value)) {
     return Syntax(new Number(number_value));
   }
+  
+  // Not a number, treat as identifier/symbol
   return createIdentifierSyntax(s);
 }
 

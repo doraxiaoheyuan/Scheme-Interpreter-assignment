@@ -4,6 +4,7 @@
 /**
  * @file Def.hpp
  * @brief Core definitions and enumerations for the Scheme interpreter
+ * @author luke36
  * 
  * This file contains essential type definitions, enumerations, and forward
  * declarations used throughout the Scheme interpreter implementation.

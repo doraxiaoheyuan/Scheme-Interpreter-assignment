@@ -21,36 +21,58 @@ using std::vector;
 extern std::map<std::string, ExprType> primitives;
 extern std::map<std::string, ExprType> reserved_words;
 
-// ----------------- literals -----------------
+Value Fixnum::eval(Assoc &e) { // evaluation of a fixnum
+    return IntegerV(n);
+}
 
-Value Fixnum::eval(Assoc &e) { return IntegerV(n); }
-Value RationalNum::eval(Assoc &e) { return RationalV(numerator, denominator); }
-Value StringExpr::eval(Assoc &e) { return StringV(s); }
-Value True::eval(Assoc &e) { return BooleanV(true); }
-Value False::eval(Assoc &e) { return BooleanV(false); }
-Value MakeVoid::eval(Assoc &e) { return VoidV(); }
-Value Exit::eval(Assoc &e) { return TerminateV(); }
+Value RationalNum::eval(Assoc &e) { // evaluation of a rational number
+    return RationalV(numerator, denominator);
+}
 
-// ----------------- abstract eval shells -----------------
+Value StringExpr::eval(Assoc &e) { // evaluation of a string
+    return StringV(s);
+}
 
-Value Unary::eval(Assoc &e) { return evalRator(rand->eval(e)); }
-Value Binary::eval(Assoc &e) { return evalRator(rand1->eval(e), rand2->eval(e)); }
+Value True::eval(Assoc &e) { // evaluation of #t
+    return BooleanV(true);
+}
+
+Value False::eval(Assoc &e) { // evaluation of #f
+    return BooleanV(false);
+}
+
+Value MakeVoid::eval(Assoc &e) { // (void)
+    return VoidV();
+}
+
+Value Exit::eval(Assoc &e) { // (exit)
+    return TerminateV();
+}
+
+
+Value Unary::eval(Assoc &e) { // evaluation of single-operator primitive
+    return evalRator(rand->eval(e));
+}
+
+Value Binary::eval(Assoc &e) { // evaluation of two-operators primitive
+    return evalRator(rand1->eval(e), rand2->eval(e));
+}
+
 Value Variadic::eval(Assoc &e) {
     vector<Value> vals;
     for (auto &x : rands) vals.push_back(x->eval(e));
     return evalRator(vals);
 }
 
-// ----------------- numeric helpers -----------------
 
 static Rational asRational(const Value &v) {
     if (v->v_type == V_RATIONAL) return *dynamic_cast<Rational*>(v.get());
     if (v->v_type == V_INT)      return Rational(dynamic_cast<Integer*>(v.get())->n, 1);
     throw RuntimeError("Numeric operand required");
 }
+
 static Value makeNumber(const Rational &r) { return RationalV(r.numerator, r.denominator); }
 
-// numeric compare provided here to support ints and rationals
 int compareNumericValues(const Value &v1, const Value &v2) {
     if (v1->v_type == V_INT && v2->v_type == V_INT) {
         int n1 = dynamic_cast<Integer*>(v1.get())->n;
@@ -77,8 +99,6 @@ int compareNumericValues(const Value &v1, const Value &v2) {
     }
     throw RuntimeError("Wrong typename in numeric comparison");
 }
-
-// ----------------- Var (variables and primitive closures) -----------------
 
 static Value makePrimitiveClosure(ExprType et, Assoc &env) {
     switch (et) {
@@ -132,31 +152,37 @@ Value Var::eval(Assoc &e) {
     throw RuntimeError("Invalid variable: " + x);
 }
 
-// ----------------- numeric primitives -----------------
-
 Value Plus::evalRator(const Value &a, const Value &b) {
     Rational ra = asRational(a), rb = asRational(b);
     Rational sum(ra.numerator * rb.denominator + rb.numerator * ra.denominator,
                  ra.denominator * rb.denominator);
     return makeNumber(sum);
+    throw(RuntimeError("Wrong typename"));
 }
+
 Value Minus::evalRator(const Value &a, const Value &b) {
     Rational ra = asRational(a), rb = asRational(b);
     Rational diff(ra.numerator * rb.denominator - rb.numerator * ra.denominator,
                   ra.denominator * rb.denominator);
     return makeNumber(diff);
+    throw(RuntimeError("Wrong typename"));
 }
+
 Value Mult::evalRator(const Value &a, const Value &b) {
     Rational ra = asRational(a), rb = asRational(b);
     Rational prod(ra.numerator * rb.numerator, ra.denominator * rb.denominator);
     return makeNumber(prod);
+    throw(RuntimeError("Wrong typename"));
 }
+
 Value Div::evalRator(const Value &a, const Value &b) {
     Rational ra = asRational(a), rb = asRational(b);
     if (rb.numerator == 0) throw RuntimeError("Division by zero");
     Rational q(ra.numerator * rb.denominator, ra.denominator * rb.numerator);
     return makeNumber(q);
+    throw(RuntimeError("Wrong typename"));
 }
+
 Value Modulo::evalRator(const Value &a, const Value &b) {
     int lhs, rhs;
     if (a->v_type == V_INT) lhs = dynamic_cast<Integer*>(a.get())->n;
@@ -211,7 +237,6 @@ Value Expt::evalRator(const Value &rand1, const Value &rand2) { // expt
     throw(RuntimeError("Wrong typename in expt"));
 }
 
-// Variadic arithmetic
 Value PlusVar::evalRator(const std::vector<Value> &args) {
     if (args.empty()) return IntegerV(0);
     Rational acc = asRational(args[0]);
@@ -222,6 +247,7 @@ Value PlusVar::evalRator(const std::vector<Value> &args) {
     }
     return makeNumber(acc);
 }
+
 Value MinusVar::evalRator(const std::vector<Value> &args) {
     if (args.empty()) throw RuntimeError("Wrong number of arguments for -");
     if (args.size() == 1) {
@@ -236,6 +262,7 @@ Value MinusVar::evalRator(const std::vector<Value> &args) {
     }
     return makeNumber(acc);
 }
+
 Value MultVar::evalRator(const std::vector<Value> &args) {
     if (args.empty()) return IntegerV(1);
     Rational acc(1,1);
@@ -245,6 +272,7 @@ Value MultVar::evalRator(const std::vector<Value> &args) {
     }
     return makeNumber(acc);
 }
+
 Value DivVar::evalRator(const std::vector<Value> &args) {
     if (args.empty()) throw RuntimeError("Wrong number of arguments for /");
     if (args.size() == 1) {
@@ -262,37 +290,54 @@ Value DivVar::evalRator(const std::vector<Value> &args) {
 }
 
 // Comparisons (binary)
-Value Less::evalRator(const Value &a, const Value &b)       { return BooleanV(compareNumericValues(a,b) < 0); }
-Value LessEq::evalRator(const Value &a, const Value &b)     { return BooleanV(compareNumericValues(a,b) <= 0); }
-Value Equal::evalRator(const Value &a, const Value &b)      { return BooleanV(compareNumericValues(a,b) == 0); }
-Value GreaterEq::evalRator(const Value &a, const Value &b)  { return BooleanV(compareNumericValues(a,b) >= 0); }
-Value Greater::evalRator(const Value &a, const Value &b)    { return BooleanV(compareNumericValues(a,b) > 0); }
+Value Less::evalRator(const Value &a, const Value &b) {
+    return BooleanV(compareNumericValues(a,b) < 0);
+}
 
-// Comparisons (variadic)
+Value LessEq::evalRator(const Value &a, const Value &b) {
+    return BooleanV(compareNumericValues(a,b) <= 0);
+}
+
+Value Equal::evalRator(const Value &a, const Value &b) {
+    return BooleanV(compareNumericValues(a,b) == 0);
+}
+
+Value GreaterEq::evalRator(const Value &a, const Value &b) {
+    return BooleanV(compareNumericValues(a,b) >= 0);
+}
+
+Value Greater::evalRator(const Value &a, const Value &b) {
+    return BooleanV(compareNumericValues(a,b) > 0);
+}
+
 Value LessVar::evalRator(const std::vector<Value> &args) {
     if (args.size() < 2) return BooleanV(true);
     for (size_t i = 1; i < args.size(); ++i)
         if (!(compareNumericValues(args[i-1], args[i]) < 0)) return BooleanV(false);
     return BooleanV(true);
 }
+
 Value LessEqVar::evalRator(const std::vector<Value> &args) {
     if (args.size() < 2) return BooleanV(true);
     for (size_t i = 1; i < args.size(); ++i)
         if (!(compareNumericValues(args[i-1], args[i]) <= 0)) return BooleanV(false);
     return BooleanV(true);
 }
+
 Value EqualVar::evalRator(const std::vector<Value> &args) {
     if (args.size() < 2) return BooleanV(true);
     for (size_t i = 1; i < args.size(); ++i)
         if (!(compareNumericValues(args[i-1], args[i]) == 0)) return BooleanV(false);
     return BooleanV(true);
 }
+
 Value GreaterEqVar::evalRator(const std::vector<Value> &args) {
     if (args.size() < 2) return BooleanV(true);
     for (size_t i = 1; i < args.size(); ++i)
         if (!(compareNumericValues(args[i-1], args[i]) >= 0)) return BooleanV(false);
     return BooleanV(true);
 }
+
 Value GreaterVar::evalRator(const std::vector<Value> &args) {
     if (args.size() < 2) return BooleanV(true);
     for (size_t i = 1; i < args.size(); ++i)
@@ -300,8 +345,10 @@ Value GreaterVar::evalRator(const std::vector<Value> &args) {
     return BooleanV(true);
 }
 
-// List operations
-Value Cons::evalRator(const Value &v1, const Value &v2) { return PairV(v1, v2); }
+
+Value Cons::evalRator(const Value &v1, const Value &v2) {
+    return PairV(v1, v2);
+}
 
 Value ListFunc::evalRator(const std::vector<Value> &args) {
     Value lst = NullV();
@@ -314,7 +361,9 @@ static bool isProperList(const Value &v) {
     if (v->v_type != V_PAIR) return false;
     return isProperList(dynamic_cast<Pair*>(v.get())->cdr);
 }
-Value IsList::evalRator(const Value &v) { return BooleanV(isProperList(v)); }
+Value IsList::evalRator(const Value &v) {
+    return BooleanV(isProperList(v));
+}
 
 Value Car::evalRator(const Value &v) {
     if (v->v_type != V_PAIR) throw RuntimeError("car on non-pair");
@@ -335,13 +384,6 @@ Value SetCdr::evalRator(const Value &p, const Value &nv) {
     return VoidV();
 }
 
-// display
-Value Display::evalRator(const Value &v) {
-    v->show(std::cout);
-    return VoidV();
-}
-
-// eq?
 Value IsEq::evalRator(const Value &a, const Value &b) {
     if ((a->v_type == V_INT || a->v_type == V_RATIONAL) &&
         (b->v_type == V_INT || b->v_type == V_RATIONAL)) {
@@ -359,16 +401,34 @@ Value IsEq::evalRator(const Value &a, const Value &b) {
     return BooleanV(a.get() == b.get());
 }
 
-// type predicates
-Value IsBoolean::evalRator(const Value &v) { return BooleanV(v->v_type == V_BOOL); }
-Value IsFixnum::evalRator(const Value &v) { return BooleanV(v->v_type == V_INT || v->v_type == V_RATIONAL); }
-Value IsNull::evalRator(const Value &v)   { return BooleanV(v->v_type == V_NULL); }
-Value IsPair::evalRator(const Value &v)   { return BooleanV(v->v_type == V_PAIR); }
-Value IsProcedure::evalRator(const Value &v) { return BooleanV(v->v_type == V_PROC); }
-Value IsSymbol::evalRator(const Value &v) { return BooleanV(v->v_type == V_SYM); }
-Value IsString::evalRator(const Value &v) { return BooleanV(v->v_type == V_STRING); }
+Value IsBoolean::evalRator(const Value &v) {
+    return BooleanV(v->v_type == V_BOOL); 
+}
 
-// ----------------- Begin, Quote -----------------
+Value IsFixnum::evalRator(const Value &v) {
+    return BooleanV(v->v_type == V_INT || v->v_type == V_RATIONAL);
+}
+
+Value IsNull::evalRator(const Value &v) {
+    return BooleanV(v->v_type == V_NULL);
+}
+
+Value IsPair::evalRator(const Value &v) {
+    return BooleanV(v->v_type == V_PAIR); 
+}
+
+Value IsProcedure::evalRator(const Value &v) {
+    return BooleanV(v->v_type == V_PROC); 
+}
+
+Value IsSymbol::evalRator(const Value &v) {
+    return BooleanV(v->v_type == V_SYM); 
+}
+
+Value IsString::evalRator(const Value &v) {
+    return BooleanV(v->v_type == V_STRING);
+}
+
 
 Value Begin::eval(Assoc &e) {
     if (es.empty()) return VoidV();
@@ -399,7 +459,6 @@ Value Begin::eval(Assoc &e) {
     return last;
 }
 
-// quote helpers
 static Value quoteToValue(const Syntax &s);
 static Value listFrom(const std::vector<Syntax> &elems, size_t lo, size_t hi) {
     Value tail = NullV();
@@ -439,11 +498,10 @@ static Value quoteToValue(const Syntax &s) {
     if (auto lst = dynamic_cast<List*>(s.get()))          return spliceDotted(lst->stxs);
     throw RuntimeError("Bad quoted form");
 }
+
 Value Quote::eval(Assoc &e) {
     return quoteToValue(s);
 }
-
-// ----------------- logic / conditionals -----------------
 
 Value AndVar::eval(Assoc &e) {
     if (rands.empty()) return BooleanV(true);
@@ -454,6 +512,7 @@ Value AndVar::eval(Assoc &e) {
     }
     return last;
 }
+
 Value OrVar::eval(Assoc &e) {
     if (rands.empty()) return BooleanV(false);
     for (auto &ex : rands) {
@@ -462,6 +521,7 @@ Value OrVar::eval(Assoc &e) {
     }
     return BooleanV(false);
 }
+
 Value Not::evalRator(const Value &v) {
     if (v->v_type == V_BOOL && !dynamic_cast<Boolean*>(v.get())->b) return BooleanV(true);
     return BooleanV(false);
@@ -495,8 +555,6 @@ Value Cond::eval(Assoc &env) {
     }
     return VoidV();
 }
-
-// ----------------- closures, apply, define, let/letrec, set! -----------------
 
 Value Lambda::eval(Assoc &env) { 
     return ProcedureV(x, e, env);
@@ -561,4 +619,7 @@ Value Set::eval(Assoc &env) {
     return VoidV();
 }
 
-// Display primitive is implemented here via Unary; returns Void
+Value Display::evalRator(const Value &v) {
+    v->show(std::cout);
+    return VoidV();
+}

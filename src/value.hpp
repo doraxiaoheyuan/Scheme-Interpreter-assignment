@@ -19,6 +19,9 @@
 // Base classes and smart pointer wrappers
 // ============================================================================
 
+/**
+ * @brief Base class for all values in the Scheme interpreter
+ */
 struct ValueBase {
     ValueType v_type;
     ValueBase(ValueType);
@@ -27,6 +30,9 @@ struct ValueBase {
     virtual ~ValueBase() = default;
 };
 
+/**
+ * @brief Smart pointer wrapper for ValueBase objects
+ */
 struct Value {
     std::shared_ptr<ValueBase> ptr;
     Value(ValueBase *);
@@ -40,6 +46,9 @@ struct Value {
 // Environment (Association Lists)
 // ============================================================================
 
+/**
+ * @brief Smart pointer wrapper for AssocList (Environment)
+ */
 struct Assoc {
     std::shared_ptr<AssocList> ptr;
     Assoc(AssocList *);
@@ -48,13 +57,17 @@ struct Assoc {
     AssocList* get() const;
 };
 
+/**
+ * @brief Association list node for variable bindings
+ */
 struct AssocList {
-    std::string x;
-    Value v;
-    Assoc next;
+    std::string x;      ///< Variable name
+    Value v;            ///< Variable value
+    Assoc next;         ///< Next binding in the chain
     AssocList(const std::string &, const Value &, Assoc &);
 };
 
+// Environment operations
 Assoc empty();
 Assoc extend(const std::string&, const Value &, Assoc &);
 void modify(const std::string&, const Value &, Assoc &);
@@ -64,12 +77,18 @@ Value find(const std::string &, Assoc &);
 // Simple Value Types
 // ============================================================================
 
+/**
+ * @brief Void value (represents no meaningful return value)
+ */
 struct Void : ValueBase {
     Void();
     virtual void show(std::ostream &) override;
 };
 Value VoidV();
 
+/**
+ * @brief Integer value
+ */
 struct Integer : ValueBase {
     int n;
     Integer(int);
@@ -77,6 +96,9 @@ struct Integer : ValueBase {
 };
 Value IntegerV(int);
 
+/**
+ * @brief Rational number value
+ */
 struct Rational : ValueBase {
     int numerator;
     int denominator;
@@ -85,6 +107,9 @@ struct Rational : ValueBase {
 };
 Value RationalV(int, int);
 
+/**
+ * @brief Boolean value
+ */
 struct Boolean : ValueBase {
     bool b;
     Boolean(bool);
@@ -92,6 +117,9 @@ struct Boolean : ValueBase {
 };
 Value BooleanV(bool);
 
+/**
+ * @brief Symbol value
+ */
 struct Symbol : ValueBase {
     std::string s;
     Symbol(const std::string &);
@@ -99,6 +127,9 @@ struct Symbol : ValueBase {
 };
 Value SymbolV(const std::string &);
 
+/**
+ * @brief String value
+ */
 struct String : ValueBase {
     std::string s;
     String(const std::string &);
@@ -110,6 +141,9 @@ Value StringV(const std::string &);
 // Special Value Types
 // ============================================================================
 
+/**
+ * @brief Null value (empty list)
+ */
 struct Null : ValueBase {
     Null();
     virtual void show(std::ostream &) override;
@@ -117,6 +151,9 @@ struct Null : ValueBase {
 };
 Value NullV();
 
+/**
+ * @brief Termination signal value
+ */
 struct Terminate : ValueBase {
     Terminate();
     virtual void show(std::ostream &) override;
@@ -127,19 +164,25 @@ Value TerminateV();
 // Composite Value Types
 // ============================================================================
 
+/**
+ * @brief Pair value (cons cell)
+ */
 struct Pair : ValueBase {
-    Value car;
-    Value cdr;
+    Value car;  ///< First element
+    Value cdr;  ///< Second element
     Pair(const Value &, const Value &);
     virtual void show(std::ostream &) override;
     virtual void showCdr(std::ostream &) override;
 };
 Value PairV(const Value &, const Value &);
 
+/**
+ * @brief Procedure (function) value
+ */
 struct Procedure : ValueBase {
-    std::vector<std::string> parameters;
-    Expr e;
-    Assoc env;
+    std::vector<std::string> parameters;   ///< Parameter names
+    Expr e;                                ///< Function body expression
+    Assoc env;                             ///< Closure environment
     Procedure(const std::vector<std::string> &, const Expr &, const Assoc &);
     virtual void show(std::ostream &) override;
 };
