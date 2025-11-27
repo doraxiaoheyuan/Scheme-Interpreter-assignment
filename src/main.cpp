@@ -33,7 +33,7 @@ static bool isExplicitVoidCall(Expr expr) {
     return false;
 }
 
-void REPL(){
+void REPL(){ // READ-EVAL-PRINT-LOOP
     Assoc global_env = empty();
     std::vector<std::pair<std::string,Expr>> pending_defines;
 
@@ -41,23 +41,24 @@ void REPL(){
         #ifndef ONLINE_JUDGE
             std::cout << "scm> ";
         #endif
+
+        // READ
         Syntax stx = readSyntax(std::cin);
         try{
             Expr expr = stx->parse(global_env);
 
-            // Batch top-level defines to support mutual recursion
-            if (auto define_expr = dynamic_cast<Define*>(expr.get())) {
+            if (auto define_expr = dynamic_cast<Define*>(expr.get())) { // 收集define
                 pending_defines.push_back({define_expr->var, define_expr->e});
                 continue;
             }
             if (!pending_defines.empty()) {
-                // Create placeholders
                 for (auto &def : pending_defines) {
-                    if (find(def.first, global_env).get() == nullptr) {
+                    if (find(def.first, global_env).get() == nullptr) { // 不存在则创建绑定
                         global_env = extend(def.first, VoidV(), global_env);
                     }
                 }
-                // Evaluate each define body in the same env, then modify
+
+                // EVAL
                 for (auto &def : pending_defines) {
                     Value val = def.second->eval(global_env);
                     modify(def.first, val, global_env);
@@ -68,7 +69,7 @@ void REPL(){
             Value val = expr->eval(global_env);
             if (val->v_type == V_TERMINATE) break;
 
-            // Print unless #<void> from implicit void
+            // PRINT
             if (val->v_type != V_VOID || isExplicitVoidCall(expr)) {
                 val->show(std::cout);
                 std::cout << "\n";
@@ -79,7 +80,7 @@ void REPL(){
         catch (const RuntimeError &){
             std::cout << "RuntimeError\n";
         }
-    }
+    } // LOOP
 }
 
 int main(int argc, char *argv[]) {

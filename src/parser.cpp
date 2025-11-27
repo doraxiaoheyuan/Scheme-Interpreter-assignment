@@ -25,8 +25,6 @@ extern std::map<std::string, ExprType> reserved_words;
 
 static Expr parseSyntax(const Syntax &stx, Assoc &env);
 
-// The SyntaxBase subclasses (Number, SymbolSyntax, ...) implement parse via dynamic dispatch.
-// This is a helper override required by the template; we don't use it directly through Syntax.
 Expr Syntax::parse(Assoc &env) {
     throw RuntimeError("Unimplemented parse method");
 }
@@ -79,8 +77,7 @@ static vector<Expr> parseFromIndex(const vector<Syntax> &items, size_t start, As
     return out;
 }
 
-// Extend an environment with a batch of placeholder bindings (for shadow checks during parse)
-static Assoc extendWithPlaceholders(const vector<string> &names, Assoc env) {
+static Assoc extendWithPlaceholders(const vector<string> &names, Assoc env) { // 扩展环境(占位符)
     Assoc tmp = env;
     for (const auto &nm : names) {
         tmp = extend(nm, VoidV(), tmp);
@@ -90,32 +87,27 @@ static Assoc extendWithPlaceholders(const vector<string> &names, Assoc env) {
 
 Expr List::parse(Assoc &env) {
     if (stxs.empty()) {
-        // () is read as (quote ())
         return Expr(new Quote(Syntax(new List())));
     }
 
-    // If the head isn't a symbol, this is a computed operator: ( (f x) a b ... )
     auto symHead = dynamic_cast<SymbolSyntax*>(stxs[0].get());
     if (!symHead) {
         vector<Expr> args = parseFromIndex(stxs, 1, env);
-        return Expr(new Apply(parseSyntax(stxs[0], env), args));
+        return Expr(new Apply(parseSyntax(stxs[0], env), args)); // 操作符=第一个元素的parsing
     }
 
     const string op = symHead->s;
 
-    // Shadowing: if 'op' is already bound in env, parse as a normal application
     if (find(op, env).get() != nullptr) {
         vector<Expr> args = parseFromIndex(stxs, 1, env);
         return Expr(new Apply(Expr(new Var(op)), args));
     }
 
-    // Primitive families
     if (primitives.count(op)) {
         vector<Expr> ps = parseFromIndex(stxs, 1, env);
         ExprType t = primitives[op];
 
         switch (t) {
-            // arithmetic (fixed-arity wrappers + variadic forms)
             case E_PLUS:
                 if (ps.size() == 2) return Expr(new Plus(ps[0], ps[1]));
                 return Expr(new PlusVar(ps));
@@ -137,7 +129,6 @@ Expr List::parse(Assoc &env) {
                 if (ps.size() != 2) throw RuntimeError("Wrong number of arguments for expt");
                 return Expr(new Expt(ps[0], ps[1]));
 
-            // comparisons (support variadic too)
             case E_LT:
                 if (ps.size() < 2) throw RuntimeError("Wrong number of arguments for <");
                 if (ps.size() == 2) return Expr(new Less(ps[0], ps[1]));
@@ -159,7 +150,6 @@ Expr List::parse(Assoc &env) {
                 if (ps.size() == 2) return Expr(new Greater(ps[0], ps[1]));
                 return Expr(new GreaterVar(ps));
 
-            // lists
             case E_LIST:
                 return Expr(new ListFunc(ps));
             case E_CONS:
@@ -178,7 +168,6 @@ Expr List::parse(Assoc &env) {
                 if (ps.size() != 2) throw RuntimeError("Wrong number of arguments for set-cdr!");
                 return Expr(new SetCdr(ps[0], ps[1]));
 
-            // logic / predicates / i/o / control as procedures
             case E_AND:
                 return Expr(new AndVar(ps));
             case E_OR:
@@ -229,7 +218,6 @@ Expr List::parse(Assoc &env) {
         throw RuntimeError("Unknown primitive: " + op);
     }
 
-    // Special forms
     if (reserved_words.count(op)) {
         switch (reserved_words[op]) {
             case E_BEGIN: {
@@ -273,8 +261,7 @@ Expr List::parse(Assoc &env) {
                     params.push_back(s->s);
                 }
 
-                // For parsing the body, pre-bind parameter names so that any
-                // special-form-looking identifiers are parsed as variables if shadowed.
+                // 先绑定
                 Assoc bodyEnv = extendWithPlaceholders(params, env);
                 vector<Expr> bodies = parseFromIndex(stxs, 2, bodyEnv);
                 Expr body = bodies.size() == 1 ? bodies[0] : Expr(new Begin(bodies));
@@ -283,7 +270,6 @@ Expr List::parse(Assoc &env) {
             case E_DEFINE: {
                 if (stxs.size() < 3) throw RuntimeError("Wrong number of arguments for define");
 
-                // Function sugar: (define (fname a b ...) body...)
                 if (auto sig = dynamic_cast<List*>(stxs[1].get())) {
                     if (sig->stxs.empty()) throw RuntimeError("Invalid function signature in define");
                     auto nameSym = dynamic_cast<SymbolSyntax*>(sig->stxs[0].get());
@@ -297,7 +283,7 @@ Expr List::parse(Assoc &env) {
                         params.push_back(s->s);
                     }
 
-                    // Parse function body with params pre-bound (and the function name, for readability/shadow checks)
+                    // 先绑定
                     Assoc bodyEnv = extendWithPlaceholders(params, env);
                     bodyEnv = extend(fname, VoidV(), bodyEnv);
 
@@ -307,7 +293,7 @@ Expr List::parse(Assoc &env) {
                     return Expr(new Define(fname, lam));
                 }
 
-                // Variable define: (define name expr-or-seq)
+                // 定义变量
                 auto nameSym = dynamic_cast<SymbolSyntax*>(stxs[1].get());
                 if (!nameSym) throw RuntimeError("Invalid variable name in define");
 
@@ -325,7 +311,7 @@ Expr List::parse(Assoc &env) {
                 pairs.reserve(binds->stxs.size());
                 names.reserve(binds->stxs.size());
 
-                // RHS parsed in the outer env (let semantics)
+                // 在外部环境里parse rhs
                 for (auto &b : binds->stxs) {
                     auto kv = dynamic_cast<List*>(b.get());
                     if (!kv || kv->stxs.size() != 2) throw RuntimeError("Wrong binding in let");
@@ -335,7 +321,7 @@ Expr List::parse(Assoc &env) {
                     pairs.push_back({keySym->s, parseSyntax(kv->stxs[1], env)});
                 }
 
-                // Parse body with placeholders for bound names so shadowing works while parsing
+                // 占位符绑定
                 Assoc bodyEnv = extendWithPlaceholders(names, env);
                 vector<Expr> bodies = parseFromIndex(stxs, 2, bodyEnv);
                 Expr body = bodies.size() == 1 ? bodies[0] : Expr(new Begin(bodies));
@@ -351,7 +337,7 @@ Expr List::parse(Assoc &env) {
                 pairs.reserve(binds->stxs.size());
                 names.reserve(binds->stxs.size());
 
-                // In letrec, RHS sees all bound names; build a placeholder env first
+                // 环境(占位符)
                 Assoc preEnv = env;
                 for (auto &b : binds->stxs) {
                     auto kv = dynamic_cast<List*>(b.get());
@@ -362,14 +348,14 @@ Expr List::parse(Assoc &env) {
                     preEnv = extend(keySym->s, VoidV(), preEnv);
                 }
 
-                // Now parse each RHS in the placeholder env
+                // 在占位符环境中parse rhs
                 for (size_t i = 0; i < binds->stxs.size(); ++i) {
                     auto kv = dynamic_cast<List*>(binds->stxs[i].get());
                     auto keySym = dynamic_cast<SymbolSyntax*>(kv->stxs[0].get());
                     pairs.push_back({keySym->s, parseSyntax(kv->stxs[1], preEnv)});
                 }
 
-                // Body parsed in the same placeholder env so shadowing is consistent
+                // 在占位符符环境中parse body
                 vector<Expr> bodies = parseFromIndex(stxs, 2, preEnv);
                 Expr body = bodies.size() == 1 ? bodies[0] : Expr(new Begin(bodies));
                 return Expr(new Letrec(pairs, body));
@@ -385,7 +371,6 @@ Expr List::parse(Assoc &env) {
         throw RuntimeError("Unknown reserved word: " + op);
     }
 
-    // Otherwise: treat as application of a variable (unbound here; may resolve at runtime)
     vector<Expr> args = parseFromIndex(stxs, 1, env);
     return Expr(new Apply(Expr(new Var(op)), args));
 }

@@ -71,26 +71,31 @@ static Rational asRational(const Value &v) {
     throw RuntimeError("Numeric operand required");
 }
 
-static Value makeNumber(const Rational &r) { return RationalV(r.numerator, r.denominator); }
+static Value makeNumber(const Rational &r) { 
+    return RationalV(r.numerator, r.denominator); 
+}
 
 int compareNumericValues(const Value &v1, const Value &v2) {
-    if (v1->v_type == V_INT && v2->v_type == V_INT) {
+    if (v1->v_type == V_INT && v2->v_type == V_INT) { // integer and integer
         int n1 = dynamic_cast<Integer*>(v1.get())->n;
         int n2 = dynamic_cast<Integer*>(v2.get())->n;
         return (n1 < n2) ? -1 : (n1 > n2) ? 1 : 0;
-    } else if (v1->v_type == V_RATIONAL && v2->v_type == V_INT) {
+    } 
+    else if (v1->v_type == V_RATIONAL && v2->v_type == V_INT) { // rational and integer
         Rational* r1 = dynamic_cast<Rational*>(v1.get());
         int n2 = dynamic_cast<Integer*>(v2.get())->n;
         int left = r1->numerator;
         int right = n2 * r1->denominator;
         return (left < right) ? -1 : (left > right) ? 1 : 0;
-    } else if (v1->v_type == V_INT && v2->v_type == V_RATIONAL) {
+    } 
+    else if (v1->v_type == V_INT && v2->v_type == V_RATIONAL) { // integer and rational
         int n1 = dynamic_cast<Integer*>(v1.get())->n;
         Rational* r2 = dynamic_cast<Rational*>(v2.get());
         int left = n1 * r2->denominator;
         int right = r2->numerator;
         return (left < right) ? -1 : (left > right) ? 1 : 0;
-    } else if (v1->v_type == V_RATIONAL && v2->v_type == V_RATIONAL) {
+    } 
+    else if (v1->v_type == V_RATIONAL && v2->v_type == V_RATIONAL) { // rational and rational
         Rational* r1 = dynamic_cast<Rational*>(v1.get());
         Rational* r2 = dynamic_cast<Rational*>(v2.get());
         int left = r1->numerator * r2->denominator;
@@ -100,7 +105,7 @@ int compareNumericValues(const Value &v1, const Value &v2) {
     throw RuntimeError("Wrong typename in numeric comparison");
 }
 
-static Value makePrimitiveClosure(ExprType et, Assoc &env) {
+static Value makePrimitiveClosure(ExprType et, Assoc &env) { 
     switch (et) {
         case E_VOID:   return ProcedureV({}, Expr(new MakeVoid()), env);
         case E_EXIT:   return ProcedureV({}, Expr(new Exit()), env);
@@ -143,9 +148,11 @@ static Value makePrimitiveClosure(ExprType et, Assoc &env) {
 }
 
 Value Var::eval(Assoc &e) {
+    // 在环境中查找变量
     Value matched_value = find(x, e);
     if (matched_value.get() != nullptr) return matched_value;
 
+    // 未找到，是内置函数
     auto it = primitives.find(x);
     if (it != primitives.end()) return makePrimitiveClosure(it->second, e);
 
@@ -156,7 +163,7 @@ Value Plus::evalRator(const Value &a, const Value &b) {
     Rational ra = asRational(a), rb = asRational(b);
     Rational sum(ra.numerator * rb.denominator + rb.numerator * ra.denominator,
                  ra.denominator * rb.denominator);
-    return makeNumber(sum);
+    return makeNumber(sum); // 约分
     throw(RuntimeError("Wrong typename"));
 }
 
@@ -212,6 +219,7 @@ Value Expt::evalRator(const Value &rand1, const Value &rand2) { // expt
             throw(RuntimeError("0^0 is undefined"));
         }
         
+        // 快速幂
         long long result = 1;
         long long b = base;
         int exp = exponent;
@@ -230,7 +238,7 @@ Value Expt::evalRator(const Value &rand1, const Value &rand2) { // expt
                 }
             }
             exp /= 2;
-        }
+        } 
         
         return IntegerV((int)result);
     }
@@ -311,7 +319,7 @@ Value Greater::evalRator(const Value &a, const Value &b) {
 }
 
 Value LessVar::evalRator(const std::vector<Value> &args) {
-    if (args.size() < 2) return BooleanV(true);
+    if (args.size() < 2) return BooleanV(true); // always true!
     for (size_t i = 1; i < args.size(); ++i)
         if (!(compareNumericValues(args[i-1], args[i]) < 0)) return BooleanV(false);
     return BooleanV(true);
@@ -352,7 +360,7 @@ Value Cons::evalRator(const Value &v1, const Value &v2) {
 
 Value ListFunc::evalRator(const std::vector<Value> &args) {
     Value lst = NullV();
-    for (auto it = args.rbegin(); it != args.rend(); ++it) lst = PairV(*it, lst);
+    for (auto it = args.rbegin(); it != args.rend(); ++it) lst = PairV(*it, lst); // 从后往前
     return lst;
 }
 
@@ -434,12 +442,13 @@ Value Begin::eval(Assoc &e) {
     if (es.empty()) return VoidV();
 
     Value last = VoidV();
-    std::vector<std::pair<string, Expr>> pending;
+    std::vector<std::pair<string, Expr>> pending; 
 
+    // 执行pending中的define
     auto flush = [&](Assoc &env) {
         if (pending.empty()) return;
-        for (auto &kv : pending) env = extend(kv.first, VoidV(), env);
-        for (auto &kv : pending) {
+        for (auto &kv : pending) env = extend(kv.first, VoidV(), env); // 创建占位符
+        for (auto &kv : pending) { // 求值后赋值
             Value rhs = kv.second->eval(env);
             modify(kv.first, rhs, env);
         }
@@ -447,15 +456,15 @@ Value Begin::eval(Assoc &e) {
     };
 
     for (auto &ex : es) {
-        if (auto d = dynamic_cast<Define*>(ex.get())) {
+        if (auto d = dynamic_cast<Define*>(ex.get())) { // 添加define
             pending.push_back({d->var, d->e});
             continue;
         }
-        flush(e);
-        last = ex->eval(e);
+        flush(e); // 执行pending
+        last = ex->eval(e); // 求值当前
         if (last->v_type == V_TERMINATE) return last;
     }
-    flush(e);
+    flush(e); // 执行剩余
     return last;
 }
 
@@ -471,7 +480,7 @@ static Value spliceDotted(const std::vector<Syntax> &elems) {
     size_t dot = elems.size();
     for (size_t i = 0; i < elems.size(); ++i) {
         if (auto sym = dynamic_cast<SymbolSyntax*>(elems[i].get())) {
-            if (sym->s == ".") { dot = i; break; }
+            if (sym->s == ".") { dot = i; break; } // 得到.位置
         }
     }
     if (dot == elems.size()) return listFrom(elems, 0, elems.size());
@@ -498,17 +507,17 @@ static Value quoteToValue(const Syntax &s) {
     if (auto lst = dynamic_cast<List*>(s.get()))          return spliceDotted(lst->stxs);
     throw RuntimeError("Bad quoted form");
 }
-
 Value Quote::eval(Assoc &e) {
     return quoteToValue(s);
 }
+
 
 Value AndVar::eval(Assoc &e) {
     if (rands.empty()) return BooleanV(true);
     Value last = BooleanV(true);
     for (auto &ex : rands) {
         last = ex->eval(e);
-        if (last->v_type == V_BOOL && !dynamic_cast<Boolean*>(last.get())->b) return BooleanV(false);
+        if (last->v_type == V_BOOL && !dynamic_cast<Boolean*>(last.get())->b) return BooleanV(false); // 遇到#f则短路
     }
     return last;
 }
@@ -528,7 +537,7 @@ Value Not::evalRator(const Value &v) {
 }
 
 Value If::eval(Assoc &e) {
-    Value c = cond->eval(e);
+    Value c = cond->eval(e); // 求值条件
     bool isFalse = (c->v_type == V_BOOL && !dynamic_cast<Boolean*>(c.get())->b);
     return isFalse ? alter->eval(e) : conseq->eval(e);
 }
@@ -537,23 +546,23 @@ Value Cond::eval(Assoc &env) {
     for (auto &cl : clauses) {
         if (cl.empty()) continue;
         if (auto v = dynamic_cast<Var*>(cl[0].get())) {
-            if (v->x == "else") {
+            if (v->x == "else") { // check else
                 if (cl.size() == 1) return VoidV();
                 Value last = VoidV();
-                for (size_t i = 1; i < cl.size(); ++i) last = cl[i]->eval(env);
+                for (size_t i = 1; i < cl.size(); ++i) last = cl[i]->eval(env); // 求值else子句
                 return last;
             }
         }
-        Value pred = cl[0]->eval(env);
+        Value pred = cl[0]->eval(env); // 求值条件
         bool pass = !(pred->v_type == V_BOOL && !dynamic_cast<Boolean*>(pred.get())->b);
         if (pass) {
             if (cl.size() == 1) return pred;
             Value last = VoidV();
-            for (size_t i = 1; i < cl.size(); ++i) last = cl[i]->eval(env);
+            for (size_t i = 1; i < cl.size(); ++i) last = cl[i]->eval(env); // 求值子句
             return last;
         }
     }
-    return VoidV();
+    return VoidV(); // 没有匹配子句
 }
 
 Value Lambda::eval(Assoc &env) { 
@@ -577,14 +586,15 @@ Value Apply::eval(Assoc &e) {
     Assoc penv = proc->env;
     for (size_t i = 0; i < argv.size(); ++i) {
         penv = extend(proc->parameters[i], argv[i], penv);
-    }
-    if (auto bg = dynamic_cast<Begin*>(proc->e.get())) return bg->eval(penv);
+    } // 扩展环境-绑定
+
+    if (auto bg = dynamic_cast<Begin*>(proc->e.get())) return bg->eval(penv); // 求值
     return proc->e->eval(penv);
 }
 
 Value Define::eval(Assoc &env) {
     Value existing = find(var, env);
-    if (existing.get() == nullptr) {
+    if (existing.get() == nullptr) { // 变量不存在则增添绑定
         env = extend(var, VoidV(), env);
     }
     Value rhs = e->eval(env);
@@ -595,10 +605,11 @@ Value Define::eval(Assoc &env) {
 Value Let::eval(Assoc &env) {
     vector<Value> vals;
     vals.reserve(bind.size());
-    for (auto &kv : bind) vals.push_back(kv.second->eval(env));
+    for (auto &kv : bind) vals.push_back(kv.second->eval(env)); // 环境中求值
+
     Assoc inner = env;
-    for (size_t i = 0; i < bind.size(); ++i) inner = extend(bind[i].first, vals[i], inner);
-    return body->eval(inner);
+    for (size_t i = 0; i < bind.size(); ++i) inner = extend(bind[i].first, vals[i], inner); // 扩展环境
+    return body->eval(inner); // 在新环境中求值
 }
 
 Value Letrec::eval(Assoc &env) {

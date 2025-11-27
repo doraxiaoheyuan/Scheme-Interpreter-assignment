@@ -90,10 +90,11 @@ bool tryParseNumber(const std::string &s, int &result) {
     if ('0' <= s[i] && s[i] <= '9') {
       n = n * 10 + s[i] - '0';
     } else {
-      return false;  // Not a valid number
+      return false;
     }
   }
   
+  // Apply sign
   result = neg ? -n : n;
   return true;
 }
@@ -136,6 +137,7 @@ Syntax readItem(std::istream &is) {
     is.get();
     return readList(is);
   }
+
   if (is.peek() == '\'')
   {
     is.get();
@@ -149,6 +151,7 @@ Syntax readItem(std::istream &is) {
     
     return Syntax(quote_list);
   }
+
   // 处理字符串字面量
   if (is.peek() == '"') {
     is.get(); // 消费开始的双引号
@@ -167,7 +170,7 @@ Syntax readItem(std::istream &is) {
           default: str.push_back(next); break;
         }
       } else {
-        str.push_back(c);
+        str.push_back(c); // 普通字符
       }
     }
     if (is.peek() == '"') {
@@ -215,7 +218,7 @@ Syntax readList(std::istream &is) {
 }
 
 Syntax readSyntax(std::istream &is) {
-  return readItem(readSpace(is));
+  return readItem(readSpace(is)); // 跳过空白再读取语法项
 }
 
 std::istream &operator>>(std::istream &is, Syntax &stx) {
